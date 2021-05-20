@@ -10,8 +10,6 @@ import os
 with os.add_dll_directory('C:\\Program Files\\Common Files\\Pleora\\eBUS SDK'):
     import pyebustest as ebus
 
-ebus.initPvSystem()
-
 print("ebus.getInterfaceCount() = ", ebus.getInterfaceCount())
 ifcount = ebus.getInterfaceCount()
 for if_id in range(ifcount):
