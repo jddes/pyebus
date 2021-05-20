@@ -17,3 +17,8 @@ for if_id in range(ifcount):
     print("if_name = ", if_name)
     print("ebus.getDeviceCount() = ", ebus.getDeviceCount(if_id))
 
+# ebus.connectToDevice("random_string")
+
+ebus.writeSerialPort('test string\n')
+result = ebus.readSerialPort(10, 500)
+print(result)
