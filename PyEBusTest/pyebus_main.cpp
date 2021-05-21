@@ -2,6 +2,7 @@
 #include <Windows.h>
 
 #include <iostream>
+#include <list>
 
 using namespace std;
 
@@ -11,6 +12,9 @@ using namespace std;
 #include <PvDeviceAdapter.h>
 #include <PvGenParameterArray.h>
 #include <PvDeviceSerialPort.h>
+#include <PvStream.h>
+#include <PvBuffer.h>
+#include <PvImage.h>
 
 PyObject* getInterfaceCount(    PyObject* self);
 PyObject* getDeviceCount(       PyObject* self, PyObject* oInterfaceNumber);
@@ -19,8 +23,21 @@ PyObject* getDeviceUniqueID(    PyObject* self, PyObject *args);
 PyObject* connectToDevice(      PyObject* self, PyObject *args);
 
 PyObject* openDeviceSerialPort(PyObject* self);
+PyObject* closeDeviceSerialPort(PyObject* self);
 PyObject* writeSerialPort(PyObject* self, PyObject* arg);
 PyObject* readSerialPort(PyObject* self, PyObject* args);
+
+PyObject* openStream(PyObject* self, PyObject* args);
+PyObject* closeStream(PyObject* self);
+PyObject* getBufferRequirements(PyObject* self);
+PyObject* addBuffer(PyObject* self, PyObject* arg);
+PyObject* releaseBuffers(PyObject* self);
+PyObject* startAcquisition(PyObject* self);
+PyObject* stopAcquisition(PyObject* self);
+PyObject* getImage(PyObject* self, PyObject* timeoutMS);
+PyObject* releaseImage(PyObject* self);
+
+PyObject* getPvImageInfo(PvImage & img);
 
 #define MOCK_SERIAL_PORT
 void printPvResultError(PvResult & lResult);
@@ -37,8 +54,20 @@ static PyMethodDef pyebustest_methods[] = {
     { "connectToDevice",       (PyCFunction)connectToDevice,       METH_VARARGS, nullptr },
 
     { "openDeviceSerialPort",  (PyCFunction)openDeviceSerialPort,  METH_NOARGS,  nullptr },
+    { "closeDeviceSerialPort", (PyCFunction)closeDeviceSerialPort, METH_NOARGS,  nullptr },
     { "writeSerialPort",       (PyCFunction)writeSerialPort,       METH_O,       nullptr },
     { "readSerialPort",        (PyCFunction)readSerialPort,        METH_VARARGS, nullptr },
+
+    { "openStream",            (PyCFunction)readSerialPort,        METH_VARARGS, nullptr },
+    { "closeStream",           (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
+    { "getBufferRequirements", (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
+    { "addBuffer",             (PyCFunction)readSerialPort,        METH_O,       nullptr },
+    { "releaseBuffers",        (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
+    { "startAcquisition",      (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
+    { "stopAcquisition",       (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
+    { "getImage",              (PyCFunction)readSerialPort,        METH_O,       nullptr },
+    { "releaseImage",          (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
+
 
     // Terminate the array with an object containing nulls.
     { nullptr, nullptr, 0, nullptr }
@@ -126,6 +155,19 @@ PyObject* connectToDevice(PyObject* self, PyObject *args)
     Py_RETURN_NONE;
 }
 
+PyObject* closeDevice(PyObject* self)
+{
+    if ( lDevice == NULL )
+    {
+        return NULL;
+    }
+
+    cout << "Disconnecting device" << endl;
+    lDevice->Disconnect();
+    PvDevice::Free( lDevice );
+    Py_RETURN_NONE;
+}
+
 void printPvResultError(PvResult & lResult)
 {
     cout << "-----------------------------------------------" << endl;
@@ -137,7 +179,6 @@ void printPvResultError(PvResult & lResult)
 }
 
 PvDeviceAdapter *lDeviceAdapter = NULL;
-PvGenParameterArray *lParams    = NULL;
 PvDeviceSerialPort lPort;
 
 #define SPEED ( "Baud9600" )
@@ -151,7 +192,7 @@ uint8_t serial_rx_buffer[RX_BUFFER_SIZE];
 PyObject* openDeviceSerialPort(PyObject* self)
 {
     lDeviceAdapter = new PvDeviceAdapter( lDevice );
-    lParams = lDevice->GetParameters();
+    PvGenParameterArray *lParams = lDevice->GetParameters();
 
     lParams->SetEnumValue( "BulkSelector", "Bulk0" );
     lParams->SetEnumValue( "BulkMode", "UART" );
@@ -178,6 +219,20 @@ PyObject* openDeviceSerialPort(PyObject* self)
 
     Py_RETURN_NONE;
 }
+
+PyObject* closeDeviceSerialPort(PyObject* self)
+{
+    // Close serial port
+    lPort.Close();
+    cout << "Serial port closed" << endl;
+
+    // Delete device adapter (before freeing PvDevice!)
+    delete lDeviceAdapter;
+    lDeviceAdapter = NULL;
+
+    Py_RETURN_NONE;
+}
+
 
 PyObject* writeSerialPort(PyObject* self, PyObject* arg)
 {
@@ -250,4 +305,191 @@ PyObject* readSerialPort(PyObject* self, PyObject* args)
 
     cout << "Received " << lTotalBytesRead << " bytes through the serial port" << endl;
     return PyUnicode_FromStringAndSize(reinterpret_cast<const char*>(serial_rx_buffer), lTotalBytesRead);
+}
+
+
+PvStream *lStream = NULL;
+
+PyObject* openStream(PyObject* self, PyObject *args)
+{
+    char * unique_id;
+    if (!PyArg_ParseTuple(args, "s", &unique_id))
+        return NULL;
+
+    PvString pvs(unique_id);
+
+    PvResult lResult;
+    lStream = PvStream::CreateAndOpen( pvs, &lResult );
+    if ( lStream == NULL )
+    {
+        printPvResultError(lResult);
+        return NULL;
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyObject* closeStream(PyObject* self)
+{
+    if ( lStream == NULL )
+        return NULL;
+
+    lStream->Close();
+    PvStream::Free( lStream );
+    Py_RETURN_NONE;
+}
+
+///////////////////////////
+PyObject* getBufferRequirements(PyObject* self)
+{
+    // Reading payload size and count from device
+    uint32_t lSize        = lDevice->GetPayloadSize();
+    uint32_t lBufferCount = lStream->GetQueuedBufferMaximum();
+    return Py_BuildValue("II", lSize, lBufferCount);
+}
+
+// I don't really see a way around handling both a list of Py_buffer and PvBuffer.
+// The actual large chunk of memory is not duplicated this way, only their descriptors, so it's not too bad.
+typedef std::list<Py_buffer *> pythonBufferListType;
+typedef std::list<PvBuffer *> ebusBufferListType;
+pythonBufferListType pythonBufferList;
+ebusBufferListType ebusBufferList;
+
+PyObject* addBuffer(PyObject* self, PyObject* arg)
+{
+    Py_buffer * pythonBuffer = new Py_buffer;
+    PvBuffer * ebusBuffer    = new PvBuffer;
+    int result = PyObject_GetBuffer(arg, pythonBuffer, PyBUF_CONTIG);
+    pythonBufferList.push_back( pythonBuffer );
+    ebusBufferList.push_back( ebusBuffer );
+
+    ebusBuffer->Attach( pythonBuffer->buf, static_cast<uint32_t>(pythonBuffer->len) );
+    lStream->QueueBuffer( ebusBuffer );
+}
+
+PyObject* releaseBuffers(PyObject* self)
+{
+
+    ebusBufferListType::iterator itEbus = ebusBufferList.begin();
+    while ( itEbus != ebusBufferList.end() )
+    {
+        delete *itEbus ;
+        itEbus++;
+    }
+
+    pythonBufferListType::iterator itPython = pythonBufferList.begin();
+    while ( itPython != pythonBufferList.end() )
+    {
+        PyBuffer_Release(*itPython);
+        delete *itPython;
+        itPython++;
+    }
+
+    Py_RETURN_NONE;
+}
+
+PyObject* startAcquisition(PyObject* self)
+{
+    // Tell the device to start sending images.
+    PvGenParameterArray *lDeviceParams = lDevice->GetParameters();
+    PvGenCommand *lStart = dynamic_cast<PvGenCommand *>( lDeviceParams->Get( "AcquisitionStart" ) );
+
+    cout << "Enabling streaming and sending AcquisitionStart command." << endl;
+    lDevice->StreamEnable();
+    lStart->Execute();
+
+    Py_RETURN_NONE;
+}
+
+PyObject* stopAcquisition(PyObject* self)
+{
+    // Tell the device to stop sending images.
+    PvGenParameterArray *lDeviceParams = lDevice->GetParameters();
+    PvGenCommand *lStop = dynamic_cast<PvGenCommand *>( lDeviceParams->Get( "AcquisitionStop" ) );
+    cout << "Sending AcquisitionStop command to the device" << endl;
+    lStop->Execute();
+
+    // Disable streaming on the device
+    cout << "Disable streaming on the controller." << endl;
+    lDevice->StreamDisable();
+
+    // Abort all buffers from the stream and dequeue
+    cout << "Aborting buffers still in stream" << endl;
+    lStream->AbortQueuedBuffers();
+    while ( lStream->GetQueuedBufferCount() > 0 )
+    {
+        PvBuffer *lBuffer = NULL;
+        PvResult lOperationResult;
+
+        lStream->RetrieveBuffer( &lBuffer, &lOperationResult );
+    }
+    Py_RETURN_NONE;
+}
+
+// Retrieve next buffer
+// The Python code must call releaseImage() after each call to getImage, once the processing is done so that the buffer is made available to the camera driver again
+PvBuffer *lastBuffer = NULL;
+PyObject* getImage(PyObject* self, PyObject* timeoutMS)
+{
+    uint32_t ltimeoutMS = PyLong_AsLong(timeoutMS);
+    PvResult lResult, lOperationResult;
+
+    lResult = lStream->RetrieveBuffer( &lastBuffer, &lOperationResult, ltimeoutMS );
+    if ( !(lResult.IsOK() && lOperationResult.IsOK()) )
+    {
+        return NULL;
+    }
+
+    PvPayloadType lType;
+    lType = lastBuffer->GetPayloadType();
+    if ( lType == !PvPayloadTypeImage )
+    {
+        cout << " (buffer does not contain image)";
+        return NULL;
+    }
+    // Get image specific buffer interface.
+    PvImage *lImage = lastBuffer->GetImage();
+
+    PyObject * view = PyMemoryView_FromMemory(
+                reinterpret_cast<char *>(lImage->GetDataPointer()),
+                lImage->GetRequiredSize(),
+                PyBUF_READ);
+    PyObject * info = getPvImageInfo(*lImage);
+    return Py_BuildValue("OO", view, info);
+}
+
+// this must be called by the Python code once the processing is done so that the buffer is made available to the camera driver again
+PyObject* releaseImage(PyObject* self)
+{
+    lStream->QueueBuffer( lastBuffer );
+    Py_RETURN_NONE;
+}
+
+// Converts all the metadata stored in PvImage to a tuple of Python objects (all ints or bools)
+PyObject* getPvImageInfo(PvImage & img)
+{
+    PvPixelType pixelType = img.GetPixelType();
+    return Py_BuildValue("IIIIIIIIHHIIppppppppp",
+                img.GetWidth(),
+                img.GetHeight(),
+                img.GetBitsPerPixel(),
+                img.GetRequiredSize(),
+                img.GetImageSize(),
+                img.GetEffectiveImageSize(),
+                img.GetOffsetX(),
+                img.GetOffsetY(),
+                img.GetPaddingX(),
+                img.GetPaddingY(),
+                PvImage::GetPixelSize(pixelType),
+                PvImage::GetBitsPerComponent(pixelType),
+                PvImage::IsPixelColor(pixelType),
+                PvImage::IsPixelHighRes(pixelType),
+                img.IsPartialLineMissing(),
+                img.IsFullLineMissing(),
+                img.IsEOFByLineCount(),
+                img.IsInterlacedEven(),
+                img.IsInterlacedOdd(),
+                img.IsImageDropped(),
+                img.IsDataOverrun()
+        );
 }
