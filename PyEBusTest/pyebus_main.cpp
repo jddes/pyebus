@@ -3,6 +3,8 @@
 
 #include <iostream>
 #include <list>
+#include <math.h>
+#include <stdlib.h>     /* srand, rand */
 
 using namespace std;
 
@@ -16,11 +18,14 @@ using namespace std;
 #include <PvBuffer.h>
 #include <PvImage.h>
 
+PyObject* useMock(              PyObject* self);
+PyObject* useRealDevice(        PyObject* self);
 PyObject* getInterfaceCount(    PyObject* self);
 PyObject* getDeviceCount(       PyObject* self, PyObject* oInterfaceNumber);
 PyObject* getInterfaceDisplayID(PyObject* self, PyObject* oInterfaceNumber);
 PyObject* getDeviceUniqueID(    PyObject* self, PyObject *args);
 PyObject* connectToDevice(      PyObject* self, PyObject *args);
+PyObject* closeDevice(          PyObject* self);
 
 PyObject* openDeviceSerialPort(PyObject* self);
 PyObject* closeDeviceSerialPort(PyObject* self);
@@ -38,8 +43,8 @@ PyObject* getImage(PyObject* self, PyObject* timeoutMS);
 PyObject* releaseImage(PyObject* self);
 
 PyObject* getPvImageInfo(PvImage & img);
+PyObject* getMockPvImageInfo();
 
-#define MOCK_SERIAL_PORT
 void printPvResultError(PvResult & lResult);
 
 static PyMethodDef pyebustest_methods[] = {
@@ -47,26 +52,30 @@ static PyMethodDef pyebustest_methods[] = {
     // The second is the C++ function with the implementation
     // METH_O means it takes a single PyObject argument
 
+    { "useMock",               (PyCFunction)useMock,               METH_NOARGS,  nullptr },
+    { "useRealDevice",         (PyCFunction)useRealDevice,         METH_NOARGS,  nullptr },
+
     { "getInterfaceCount",     (PyCFunction)getInterfaceCount,     METH_NOARGS,  nullptr },
     { "getDeviceCount",        (PyCFunction)getDeviceCount,        METH_O,       nullptr },
     { "getInterfaceDisplayID", (PyCFunction)getInterfaceDisplayID, METH_O,       nullptr },
     { "getDeviceUniqueID",     (PyCFunction)getDeviceUniqueID,     METH_VARARGS, nullptr },
     { "connectToDevice",       (PyCFunction)connectToDevice,       METH_VARARGS, nullptr },
+    { "closeDevice",           (PyCFunction)closeDevice,           METH_NOARGS,  nullptr },
 
     { "openDeviceSerialPort",  (PyCFunction)openDeviceSerialPort,  METH_NOARGS,  nullptr },
     { "closeDeviceSerialPort", (PyCFunction)closeDeviceSerialPort, METH_NOARGS,  nullptr },
     { "writeSerialPort",       (PyCFunction)writeSerialPort,       METH_O,       nullptr },
     { "readSerialPort",        (PyCFunction)readSerialPort,        METH_VARARGS, nullptr },
 
-    { "openStream",            (PyCFunction)readSerialPort,        METH_VARARGS, nullptr },
-    { "closeStream",           (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
-    { "getBufferRequirements", (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
-    { "addBuffer",             (PyCFunction)readSerialPort,        METH_O,       nullptr },
-    { "releaseBuffers",        (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
-    { "startAcquisition",      (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
-    { "stopAcquisition",       (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
-    { "getImage",              (PyCFunction)readSerialPort,        METH_O,       nullptr },
-    { "releaseImage",          (PyCFunction)readSerialPort,        METH_NOARGS,  nullptr },
+    { "openStream",            (PyCFunction)openStream,            METH_VARARGS, nullptr },
+    { "closeStream",           (PyCFunction)closeStream,           METH_NOARGS,  nullptr },
+    { "getBufferRequirements", (PyCFunction)getBufferRequirements, METH_NOARGS,  nullptr },
+    { "addBuffer",             (PyCFunction)addBuffer,             METH_O,       nullptr },
+    { "releaseBuffers",        (PyCFunction)releaseBuffers,        METH_NOARGS,  nullptr },
+    { "startAcquisition",      (PyCFunction)startAcquisition,      METH_NOARGS,  nullptr },
+    { "stopAcquisition",       (PyCFunction)stopAcquisition,       METH_NOARGS,  nullptr },
+    { "getImage",              (PyCFunction)getImage,              METH_O,       nullptr },
+    { "releaseImage",          (PyCFunction)releaseImage,          METH_NOARGS,  nullptr },
 
 
     // Terminate the array with an object containing nulls.
@@ -109,6 +118,25 @@ PvDeviceSerialPort lPort;
 #define RX_BUFFER_SIZE ( 2<<20 )
 uint8_t serial_rx_buffer[RX_BUFFER_SIZE];
 
+bool use_mock=false;
+#define MOCK_DEVICE_GUID "mock_device_guid"
+#define MOCK_IMG_WIDTH 640
+#define MOCK_IMG_HEIGHT 512
+#define MOCK_BYTES_PER_PIXEL 2
+
+pythonBufferListType::iterator itPythonMock;
+
+PyObject* useMock(PyObject* self)
+{
+    use_mock = true;
+    Py_RETURN_NONE;
+}
+
+PyObject* useRealDevice(PyObject* self)
+{
+    use_mock = false;
+    Py_RETURN_NONE;
+}
 
 PyObject* getInterfaceCount(PyObject* self) {
     return PyLong_FromSize_t(pvSystem.GetInterfaceCount());
@@ -119,8 +147,13 @@ PyObject* getDeviceCount(PyObject* self, PyObject* oInterfaceNumber) {
     const PvInterface *lInterface = dynamic_cast<const PvInterface *>( pvSystem.GetInterface( interface_number ) );
     if (lInterface == NULL)
         return NULL;
-
-    return PyLong_FromSize_t(lInterface->GetDeviceCount());
+    if (use_mock)
+        if (interface_number == pvSystem.GetInterfaceCount()-1)
+            return PyLong_FromSize_t(1);
+        else
+            return PyLong_FromSize_t(0);
+    else
+        return PyLong_FromSize_t(lInterface->GetDeviceCount());
 }
 
 PyObject* getInterfaceDisplayID(PyObject* self, PyObject* oInterfaceNumber) {
@@ -141,12 +174,17 @@ PyObject* getDeviceUniqueID(PyObject* self, PyObject *args) {
     const PvInterface *lInterface = dynamic_cast<const PvInterface *>( pvSystem.GetInterface( interface_number ) );
     if (lInterface == NULL)
         return NULL;
-    const PvDeviceInfo *lDI = dynamic_cast<const PvDeviceInfo *>( lInterface->GetDeviceInfo( device_number ) );
-    if (lDI == NULL)
-        return NULL;
+    if (use_mock)
+    {
+        return PyUnicode_FromString(MOCK_DEVICE_GUID);
+    } else {
+        const PvDeviceInfo *lDI = dynamic_cast<const PvDeviceInfo *>( lInterface->GetDeviceInfo( device_number ) );
+        if (lDI == NULL)
+            return NULL;
 
-    PvString pvs = lInterface->GetUniqueID();
-    return PyUnicode_FromStringAndSize(pvs.GetAscii(), pvs.GetLength());
+        PvString pvs = lInterface->GetUniqueID();
+        return PyUnicode_FromStringAndSize(pvs.GetAscii(), pvs.GetLength());
+    }
 }
 
 PyObject* connectToDevice(PyObject* self, PyObject *args)
@@ -159,9 +197,16 @@ PyObject* connectToDevice(PyObject* self, PyObject *args)
     cout << "Connecting to " << pvs.GetAscii() << "." << endl;
 
     PvResult lResult;
-    lDevice = PvDevice::CreateAndConnect( pvs, &lResult );
-    lResult.SetCode(PV_NOT_INITIALIZED);
-    if ( !lResult.IsOK() || lDevice == NULL )
+    if (!use_mock)
+    {
+        lDevice = PvDevice::CreateAndConnect( pvs, &lResult );
+    } else {
+        if (pvs == MOCK_DEVICE_GUID)
+            lResult.SetCode(0);
+        else
+            lResult.SetCode(0x0019);
+    }
+    if ( !lResult.IsOK() )
     {
         cout << "Unable to connect to " << pvs.GetAscii() << ": " << (const char*) lResult.GetDescription() << "." << endl;
         printPvResultError(lResult);
@@ -173,6 +218,8 @@ PyObject* connectToDevice(PyObject* self, PyObject *args)
 
 PyObject* closeDevice(PyObject* self)
 {
+    if (use_mock)
+        Py_RETURN_NONE;
     if ( lDevice == NULL )
     {
         return NULL;
@@ -197,6 +244,12 @@ void printPvResultError(PvResult & lResult)
 // this follows "Pleora Technologies Inc\eBUS SDK\Samples\DeviceSerialPort\DeviceSerialPort.cpp"
 PyObject* openDeviceSerialPort(PyObject* self)
 {
+    if (use_mock)
+    {
+        cout << "Mock serial port opened" << endl;
+        Py_RETURN_NONE;
+    }
+
     lDeviceAdapter = new PvDeviceAdapter( lDevice );
     PvGenParameterArray *lParams = lDevice->GetParameters();
 
@@ -228,6 +281,8 @@ PyObject* openDeviceSerialPort(PyObject* self)
 
 PyObject* closeDeviceSerialPort(PyObject* self)
 {
+    if (use_mock)
+        Py_RETURN_NONE;
     // Close serial port
     lPort.Close();
     cout << "Serial port closed" << endl;
@@ -248,24 +303,27 @@ PyObject* writeSerialPort(PyObject* self, PyObject* arg)
         return NULL;
 
     uint32_t lBytesWritten = 0;
-#ifndef MOCK_SERIAL_PORT
-    PvResult lResult;
-    lResult = lPort.Write( buf, size, lBytesWritten );
-    if ( !lResult.IsOK() )
+    if (!use_mock)
     {
-        // Unable to send data over serial port!
-        cout << "Error sending data over the serial port: " << lResult.GetCodeString().GetAscii() << " " <<  lResult.GetDescription().GetAscii() << endl;
-        return NULL;
+        PvResult lResult;
+        lResult = lPort.Write( buf, size, lBytesWritten );
+        if ( !lResult.IsOK() )
+        {
+            // Unable to send data over serial port!
+            cout << "Error sending data over the serial port: " << lResult.GetCodeString().GetAscii() << " " <<  lResult.GetDescription().GetAscii() << endl;
+            return NULL;
+        }
+    } else {
+        // Mock implementation: just a loopback that also prints
+        printf("Mock: Will send %d bytes: '", (int)size);
+        for (uint32_t k=0; k<size; k++)
+        {
+            serial_rx_buffer[k] = buf[k];
+            printf("%d, ", serial_rx_buffer[k]);
+        }
+        printf("'\n");
+        lBytesWritten = size;
     }
-#else
-    printf("Will send %d bytes: '", (int)size);
-    for (uint32_t k=0; k<size; k++)
-    {
-        printf("%d, ", buf[k]);
-    }
-    printf("'\n");
-    lBytesWritten = size;
-#endif // MOCK_SERIAL_PORT
 
     cout << "Sent " << lBytesWritten << " bytes through the serial port" << endl;
     Py_RETURN_NONE;
@@ -285,28 +343,30 @@ PyObject* readSerialPort(PyObject* self, PyObject* args)
     }
 
     uint32_t lTotalBytesRead = 0;
-#ifndef MOCK_SERIAL_PORT
-    PvResult lResult;
-    while ( lTotalBytesRead < lSize )
+    if (!use_mock)
     {
-        uint32_t lBytesRead = 0;
-        lResult = lPort.Read( serial_rx_buffer + lTotalBytesRead, lSize - lTotalBytesRead, lBytesRead, lTimeoutMS );
-        if ( lResult.GetCode() == PvResult::Code::TIMEOUT )
+        PvResult lResult;
+        while ( lTotalBytesRead < lSize )
         {
-            cout << "Serial Read Timeout" << endl;
-            break;
-        }
+            uint32_t lBytesRead = 0;
+            lResult = lPort.Read( serial_rx_buffer + lTotalBytesRead, lSize - lTotalBytesRead, lBytesRead, lTimeoutMS );
+            if ( lResult.GetCode() == PvResult::Code::TIMEOUT )
+            {
+                cout << "Serial Read Timeout" << endl;
+                break;
+            }
 
-        // Increments read head
-        lTotalBytesRead += lBytesRead;
+            // Increments read head
+            lTotalBytesRead += lBytesRead;
+        }
+    } else {
+        // Mock implementation
+        lTotalBytesRead = lSize;
+        for (uint32_t k=0; k<lTotalBytesRead; k++)
+        {
+            serial_rx_buffer[k] = 10*k;
+        }
     }
-#else
-    lTotalBytesRead = lSize;
-    for (uint32_t k=0; k<lTotalBytesRead; k++)
-    {
-        serial_rx_buffer[k] = 10*k;
-    }
-#endif // MOCK_SERIAL_PORT
 
     cout << "Received " << lTotalBytesRead << " bytes through the serial port" << endl;
     return PyUnicode_FromStringAndSize(reinterpret_cast<const char*>(serial_rx_buffer), lTotalBytesRead);
@@ -321,18 +381,25 @@ PyObject* openStream(PyObject* self, PyObject *args)
     PvString pvs(unique_id);
 
     PvResult lResult;
-    lStream = PvStream::CreateAndOpen( pvs, &lResult );
-    if ( lStream == NULL )
+    if (!use_mock)
     {
-        printPvResultError(lResult);
-        return NULL;
+        lStream = PvStream::CreateAndOpen( pvs, &lResult );
+        if ( lStream == NULL )
+        {
+            printPvResultError(lResult);
+            return NULL;
+        }
+    } else {
+        if (pvs != MOCK_DEVICE_GUID)
+            return NULL;
     }
-
     Py_RETURN_NONE;
 }
 
 PyObject* closeStream(PyObject* self)
 {
+    if (use_mock)
+        Py_RETURN_NONE;
     if ( lStream == NULL )
         return NULL;
 
@@ -345,8 +412,15 @@ PyObject* closeStream(PyObject* self)
 PyObject* getBufferRequirements(PyObject* self)
 {
     // Reading payload size and count from device
-    uint32_t lSize        = lDevice->GetPayloadSize();
-    uint32_t lBufferCount = lStream->GetQueuedBufferMaximum();
+    uint32_t lSize, lBufferCount;
+    if (!use_mock)
+    {
+        lSize        = lDevice->GetPayloadSize();
+        lBufferCount = lStream->GetQueuedBufferMaximum();
+    } else {
+        lSize = MOCK_IMG_WIDTH * MOCK_IMG_HEIGHT * MOCK_BYTES_PER_PIXEL;
+        lBufferCount = 16;
+    }
     return Py_BuildValue("II", lSize, lBufferCount);
 }
 
@@ -361,7 +435,11 @@ PyObject* addBuffer(PyObject* self, PyObject* arg)
     ebusBufferList.push_back( ebusBuffer );
 
     ebusBuffer->Attach( pythonBuffer->buf, static_cast<uint32_t>(pythonBuffer->len) );
-    lStream->QueueBuffer( ebusBuffer );
+    if (!use_mock)
+        lStream->QueueBuffer( ebusBuffer );
+    else
+        itPythonMock = pythonBufferList.begin(); // needed for faking images
+    Py_RETURN_NONE;
 }
 
 PyObject* releaseBuffers(PyObject* self)
@@ -386,6 +464,8 @@ PyObject* releaseBuffers(PyObject* self)
 
 PyObject* startAcquisition(PyObject* self)
 {
+    if (use_mock)
+        Py_RETURN_NONE;
     // Tell the device to start sending images.
     PvGenParameterArray *lDeviceParams = lDevice->GetParameters();
     PvGenCommand *lStart = dynamic_cast<PvGenCommand *>( lDeviceParams->Get( "AcquisitionStart" ) );
@@ -399,6 +479,8 @@ PyObject* startAcquisition(PyObject* self)
 
 PyObject* stopAcquisition(PyObject* self)
 {
+    if (use_mock)
+        Py_RETURN_NONE;
     // Tell the device to stop sending images.
     PvGenParameterArray *lDeviceParams = lDevice->GetParameters();
     PvGenCommand *lStop = dynamic_cast<PvGenCommand *>( lDeviceParams->Get( "AcquisitionStop" ) );
@@ -429,33 +511,70 @@ PyObject* getImage(PyObject* self, PyObject* timeoutMS)
     uint32_t ltimeoutMS = PyLong_AsLong(timeoutMS);
     PvResult lResult, lOperationResult;
 
-    lResult = lStream->RetrieveBuffer( &lastBuffer, &lOperationResult, ltimeoutMS );
-    if ( !(lResult.IsOK() && lOperationResult.IsOK()) )
+    PyObject *view, *info;
+    if (!use_mock)
     {
-        return NULL;
-    }
+        lResult = lStream->RetrieveBuffer( &lastBuffer, &lOperationResult, ltimeoutMS );
+        if ( !(lResult.IsOK() && lOperationResult.IsOK()) )
+        {
+            return NULL;
+        }
 
-    PvPayloadType lType;
-    lType = lastBuffer->GetPayloadType();
-    if ( lType == !PvPayloadTypeImage )
-    {
-        cout << " (buffer does not contain image)";
-        return NULL;
-    }
-    // Get image specific buffer interface.
-    PvImage *lImage = lastBuffer->GetImage();
+        PvPayloadType lType;
+        lType = lastBuffer->GetPayloadType();
+        if ( lType == !PvPayloadTypeImage )
+        {
+            cout << " (buffer does not contain image)";
+            return NULL;
+        }
+        // Get image specific buffer interface.
+        PvImage *lImage = lastBuffer->GetImage();
 
-    PyObject * view = PyMemoryView_FromMemory(
-                reinterpret_cast<char *>(lImage->GetDataPointer()),
-                lImage->GetRequiredSize(),
-                PyBUF_READ);
-    PyObject * info = getPvImageInfo(*lImage);
-    return Py_BuildValue("OO", view, info);
+        view = PyMemoryView_FromMemory(
+                    reinterpret_cast<char *>(lImage->GetDataPointer()),
+                    lImage->GetRequiredSize(),
+                    PyBUF_READ);
+        info = getPvImageInfo(*lImage);
+    } else {
+        // Mock implementation: generate a random image + gaussian beam at a fixed position
+        Py_buffer * pythonBuffer = *itPythonMock;
+        uint16_t * raw_buffer = reinterpret_cast<uint16_t *>(pythonBuffer->buf);
+        for (uint32_t y=0; y<MOCK_IMG_HEIGHT; y++)
+        {
+            for (uint32_t x=0; x<MOCK_IMG_WIDTH; x++)
+            {
+                // (rand()% 1000) takes 8 ms for a 640x512 image
+                // exp() takes 10 ms for a 640x512 image
+                // pow()+pow() takes 10 ms for a 640x512 image
+                // total is 28 ms for the whole thing...
+                raw_buffer[y*MOCK_IMG_WIDTH + x] = (rand() % 20000)
+                    + static_cast<uint16_t>(30000.*exp(
+                            -(pow((x-100.), 2.0) + pow((y-50.), 2.0))
+                                       /2./(10.*10.) )
+                                           );
+            }
+        }
+
+        // change to the next buffer in the list (wrapping around when needed)
+        if (++itPythonMock == pythonBufferList.end())
+        {
+            itPythonMock = pythonBufferList.begin();
+        }
+
+        view = PyMemoryView_FromMemory(
+                    reinterpret_cast<char *>(pythonBuffer->buf),
+                    pythonBuffer->len,
+                    PyBUF_READ);
+        info = getMockPvImageInfo();
+    }
+    return Py_BuildValue("(NN)", view, info);
 }
 
 // this must be called by the Python code once the processing is done so that the buffer is made available to the camera driver again
 PyObject* releaseImage(PyObject* self)
 {
+    if (use_mock)
+        Py_RETURN_NONE;
     lStream->QueueBuffer( lastBuffer );
     Py_RETURN_NONE;
 }
@@ -464,7 +583,7 @@ PyObject* releaseImage(PyObject* self)
 PyObject* getPvImageInfo(PvImage & img)
 {
     PvPixelType pixelType = img.GetPixelType();
-    return Py_BuildValue("IIIIIIIIHHIIppppppppp",
+    return Py_BuildValue("(IIIIIIIIHHIIppppppppp)",
                 img.GetWidth(),
                 img.GetHeight(),
                 img.GetBitsPerPixel(),
@@ -486,5 +605,33 @@ PyObject* getPvImageInfo(PvImage & img)
                 img.IsInterlacedOdd(),
                 img.IsImageDropped(),
                 img.IsDataOverrun()
+        );
+}
+
+// return sensible values for our mock images
+PyObject* getMockPvImageInfo()
+{
+    return Py_BuildValue("(IIIIIIIIHHIIIIIIIIIII)",
+                MOCK_IMG_WIDTH,
+                MOCK_IMG_HEIGHT,
+                MOCK_BYTES_PER_PIXEL*8,
+                MOCK_IMG_WIDTH*MOCK_IMG_HEIGHT,
+                MOCK_IMG_WIDTH*MOCK_IMG_HEIGHT,
+                MOCK_IMG_WIDTH*MOCK_IMG_HEIGHT,
+                0,
+                0,
+                0,
+                0,
+                MOCK_BYTES_PER_PIXEL*8,
+                MOCK_BYTES_PER_PIXEL*8,
+                true,
+                true,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false
         );
 }

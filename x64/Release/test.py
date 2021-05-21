@@ -1,11 +1,12 @@
 import sys
 import os
-# print(sys.argv)
-# print(os.path.dirname(sys.argv[0]))
-# import ctypes
-# d = ctypes.cdll.LoadLibrary('Second_DLL_test.py')
-# d = ctypes.cdll.LoadLibrary('I:\\Projects\\Second_DLL_test\\x64\\Release\\Second_DLL_test.dll')
-# d = ctypes.cdll.LoadLibrary('\\Second_DLL_test.py')
+import time
+
+import numpy as np
+import cv2
+
+with os.add_dll_directory('C:\\Program Files\\Common Files\\Pleora\\eBUS SDK'):
+    import pyebustest as ebus
 
 def expand_img_info_tuple(img_info):
     """ Unpack the img_info tuple into a dictionary.
@@ -34,9 +35,9 @@ def expand_img_info_tuple(img_info):
                 "IsDataOverrun",]
     return {k: v for k, v in zip(keys, img_info)}
 
-with os.add_dll_directory('C:\\Program Files\\Common Files\\Pleora\\eBUS SDK'):
-    import pyebustest as ebus
+ebus.useMock()
 
+device_unique_id = ""
 print("ebus.getInterfaceCount() = ", ebus.getInterfaceCount())
 ifcount = ebus.getInterfaceCount()
 for if_id in range(ifcount):
@@ -47,9 +48,9 @@ for if_id in range(ifcount):
         device_unique_id = ebus.getDeviceUniqueID(if_id, dev_id)
         print("device_unique_id = ", device_unique_id)
 
-device_unique_id = "random_string"
-# ebus.connectToDevice(device_unique_id)
-# ebus.openStream(device_unique_id)
+# device_unique_id = "random_string"
+ebus.connectToDevice(device_unique_id)
+ebus.openStream(device_unique_id)
 (buffer_size, buffer_count) = ebus.getBufferRequirements()
 # allocate "buffer_count" buffers of size "buffer_size"!
 buffers = []
@@ -63,13 +64,26 @@ ebus.startAcquisition()
 
 ##################### Start image processing loop #####################
 timeoutMS = 1000
+kImage = 0
+img_buffer = "test"
+
 while 1:
+    t1 = time.perf_counter()
+    kImage += 1
     (img_buffer, img_info) = ebus.getImage(timeoutMS)
+    # print(img_info)
     info = expand_img_info_tuple(img_info)
+    # print(info)
+    t2 = time.perf_counter()
     # TODO: processing goes here
     # hint: map the image into a numpy array by doing np.frombuffer(img_buffer, np.uint16)
     img_np = np.frombuffer(img_buffer, np.uint16)
     img_np = img_np.reshape(info['Height'], info['Width'])
+    print("kImage=%d, t=%.3f ms, min, max: %d, %d" % (kImage, (t2-t1)*1e3, np.min(img_np), np.max(img_np)))
+    cv2.imshow('Press any key to stop', img_np)
+    if cv2.pollKey() != -1:
+        break
+
     ebus.releaseImage()
 ##################### End   image processing loop #####################
 
