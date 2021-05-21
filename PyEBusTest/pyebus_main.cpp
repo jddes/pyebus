@@ -91,6 +91,24 @@ PyMODINIT_FUNC PyInit_pyebustest() {
 ///////////////////////////////////////////////
 
 PvSystem pvSystem;
+PvDevice * lDevice = NULL;
+PvStream *lStream = NULL;
+
+typedef std::list<Py_buffer *> pythonBufferListType;
+typedef std::list<PvBuffer *> ebusBufferListType;
+pythonBufferListType pythonBufferList;
+ebusBufferListType ebusBufferList;
+PvBuffer *lastBuffer = NULL;
+
+PvDeviceAdapter *lDeviceAdapter = NULL;
+PvDeviceSerialPort lPort;
+
+#define SPEED ( "Baud9600" )
+#define STOPBITS ( "One" )
+#define PARITY ( "None" )
+#define RX_BUFFER_SIZE ( 2<<20 )
+uint8_t serial_rx_buffer[RX_BUFFER_SIZE];
+
 
 PyObject* getInterfaceCount(PyObject* self) {
     return PyLong_FromSize_t(pvSystem.GetInterfaceCount());
@@ -130,8 +148,6 @@ PyObject* getDeviceUniqueID(PyObject* self, PyObject *args) {
     PvString pvs = lInterface->GetUniqueID();
     return PyUnicode_FromStringAndSize(pvs.GetAscii(), pvs.GetLength());
 }
-
-PvDevice * lDevice = NULL;
 
 PyObject* connectToDevice(PyObject* self, PyObject *args)
 {
@@ -178,16 +194,6 @@ void printPvResultError(PvResult & lResult)
     cout << "-----------------------------------------------" << endl;
 }
 
-PvDeviceAdapter *lDeviceAdapter = NULL;
-PvDeviceSerialPort lPort;
-
-#define SPEED ( "Baud9600" )
-#define STOPBITS ( "One" )
-#define PARITY ( "None" )
-#define RX_BUFFER_SIZE ( 2<<20 )
-
-uint8_t serial_rx_buffer[RX_BUFFER_SIZE];
-
 // this follows "Pleora Technologies Inc\eBUS SDK\Samples\DeviceSerialPort\DeviceSerialPort.cpp"
 PyObject* openDeviceSerialPort(PyObject* self)
 {
@@ -232,7 +238,6 @@ PyObject* closeDeviceSerialPort(PyObject* self)
 
     Py_RETURN_NONE;
 }
-
 
 PyObject* writeSerialPort(PyObject* self, PyObject* arg)
 {
@@ -307,9 +312,6 @@ PyObject* readSerialPort(PyObject* self, PyObject* args)
     return PyUnicode_FromStringAndSize(reinterpret_cast<const char*>(serial_rx_buffer), lTotalBytesRead);
 }
 
-
-PvStream *lStream = NULL;
-
 PyObject* openStream(PyObject* self, PyObject *args)
 {
     char * unique_id;
@@ -350,11 +352,6 @@ PyObject* getBufferRequirements(PyObject* self)
 
 // I don't really see a way around handling both a list of Py_buffer and PvBuffer.
 // The actual large chunk of memory is not duplicated this way, only their descriptors, so it's not too bad.
-typedef std::list<Py_buffer *> pythonBufferListType;
-typedef std::list<PvBuffer *> ebusBufferListType;
-pythonBufferListType pythonBufferList;
-ebusBufferListType ebusBufferList;
-
 PyObject* addBuffer(PyObject* self, PyObject* arg)
 {
     Py_buffer * pythonBuffer = new Py_buffer;
@@ -369,7 +366,6 @@ PyObject* addBuffer(PyObject* self, PyObject* arg)
 
 PyObject* releaseBuffers(PyObject* self)
 {
-
     ebusBufferListType::iterator itEbus = ebusBufferList.begin();
     while ( itEbus != ebusBufferList.end() )
     {
@@ -428,7 +424,6 @@ PyObject* stopAcquisition(PyObject* self)
 
 // Retrieve next buffer
 // The Python code must call releaseImage() after each call to getImage, once the processing is done so that the buffer is made available to the camera driver again
-PvBuffer *lastBuffer = NULL;
 PyObject* getImage(PyObject* self, PyObject* timeoutMS)
 {
     uint32_t ltimeoutMS = PyLong_AsLong(timeoutMS);
