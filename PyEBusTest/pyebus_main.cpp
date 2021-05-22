@@ -360,12 +360,8 @@ PyObject* readSerialPort(PyObject* self, PyObject* args)
             lTotalBytesRead += lBytesRead;
         }
     } else {
-        // Mock implementation
+        // Mock implementation: do nothing!
         lTotalBytesRead = lSize;
-        for (uint32_t k=0; k<lTotalBytesRead; k++)
-        {
-            serial_rx_buffer[k] = 10*k;
-        }
     }
 
     cout << "Received " << lTotalBytesRead << " bytes through the serial port" << endl;

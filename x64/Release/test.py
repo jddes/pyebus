@@ -72,17 +72,20 @@ while 1:
     kImage += 1
     (img_buffer, img_info) = ebus.getImage(timeoutMS)
     # print(img_info)
+    t2 = time.perf_counter()
     info = expand_img_info_tuple(img_info)
     # print(info)
-    t2 = time.perf_counter()
     # TODO: processing goes here
     # hint: map the image into a numpy array by doing np.frombuffer(img_buffer, np.uint16)
     img_np = np.frombuffer(img_buffer, np.uint16)
     img_np = img_np.reshape(info['Height'], info['Width'])
-    print("kImage=%d, t=%.3f ms, min, max: %d, %d" % (kImage, (t2-t1)*1e3, np.min(img_np), np.max(img_np)))
+    t3 = time.perf_counter()
     cv2.imshow('Press any key to stop', img_np)
     if cv2.pollKey() != -1:
         break
+    t4 = time.perf_counter()
+    print("kImage=%d, t(getImage)=%.3f ms, t(numpy)=%.3f ms, t(cv)=%.3f ms, min, max: %d, %d" %
+        (kImage, (t2-t1)*1e3, (t3-t2)*1e3, (t4-t3)*1e3, np.min(img_np), np.max(img_np)))
 
     ebus.releaseImage()
 ##################### End   image processing loop #####################
