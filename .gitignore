@@ -367,3 +367,4 @@ FodyWeavers.xsd
 !x64/Release
 x64/Release/*.*
 !x64/Release/*.py
+!x64/Release/*.pyd
