@@ -117,6 +117,8 @@ PvDeviceSerialPort lPort;
 #define PARITY ( "None" )
 #define RX_BUFFER_SIZE ( 2<<20 )
 uint8_t serial_rx_buffer[RX_BUFFER_SIZE];
+uint32_t rx_available_for_mock = 0;
+
 
 bool use_mock=false;
 #define MOCK_DEVICE_GUID "mock_device_guid"
@@ -306,7 +308,9 @@ PyObject* writeSerialPort(PyObject* self, PyObject* arg)
     if (!use_mock)
     {
         PvResult lResult;
+        Py_BEGIN_ALLOW_THREADS
         lResult = lPort.Write( buf, size, lBytesWritten );
+        Py_END_ALLOW_THREADS
         if ( !lResult.IsOK() )
         {
             // Unable to send data over serial port!
@@ -315,14 +319,13 @@ PyObject* writeSerialPort(PyObject* self, PyObject* arg)
         }
     } else {
         // Mock implementation: just a loopback that also prints
-        printf("Mock: Will send %d bytes: '", (int)size);
+        //printf("Mock: Will send %d bytes.'", (int)size);
         for (uint32_t k=0; k<size; k++)
         {
-            serial_rx_buffer[k] = buf[k];
-            printf("%d, ", serial_rx_buffer[k]);
+            serial_rx_buffer[k+rx_available_for_mock] = buf[k];
         }
-        printf("'\n");
         lBytesWritten = size;
+        rx_available_for_mock += lBytesWritten;
     }
 
     cout << "Sent " << lBytesWritten << " bytes through the serial port" << endl;
@@ -331,6 +334,7 @@ PyObject* writeSerialPort(PyObject* self, PyObject* arg)
 
 PyObject* readSerialPort(PyObject* self, PyObject* args)
 {
+    PyObject* retval;
     int32_t lSize;
     int32_t lTimeoutMS;
     if (!PyArg_ParseTuple(args, "ii", &lSize, &lTimeoutMS))
@@ -349,7 +353,9 @@ PyObject* readSerialPort(PyObject* self, PyObject* args)
         while ( lTotalBytesRead < lSize )
         {
             uint32_t lBytesRead = 0;
+            Py_BEGIN_ALLOW_THREADS
             lResult = lPort.Read( serial_rx_buffer + lTotalBytesRead, lSize - lTotalBytesRead, lBytesRead, lTimeoutMS );
+            Py_END_ALLOW_THREADS
             if ( lResult.GetCode() == PvResult::Code::TIMEOUT )
             {
                 cout << "Serial Read Timeout" << endl;
@@ -359,13 +365,23 @@ PyObject* readSerialPort(PyObject* self, PyObject* args)
             // Increments read head
             lTotalBytesRead += lBytesRead;
         }
+        retval = PyUnicode_FromStringAndSize(reinterpret_cast<const char*>(serial_rx_buffer), lTotalBytesRead);
     } else {
-        // Mock implementation: do nothing!
-        lTotalBytesRead = lSize;
+        // Mock implementation
+        if (lSize <= rx_available_for_mock)
+        {
+            lTotalBytesRead = lSize;
+        }
+        else {
+            lTotalBytesRead = rx_available_for_mock;
+        }
+        
+        retval = PyUnicode_FromStringAndSize(reinterpret_cast<const char*>(serial_rx_buffer), lTotalBytesRead);
+        rx_available_for_mock -= lTotalBytesRead;
     }
 
-    cout << "Received " << lTotalBytesRead << " bytes through the serial port" << endl;
-    return PyUnicode_FromStringAndSize(reinterpret_cast<const char*>(serial_rx_buffer), lTotalBytesRead);
+    // cout << "Received " << lTotalBytesRead << " bytes through the serial port" << endl;
+    return retval;
 }
 
 PyObject* openStream(PyObject* self, PyObject *args)
@@ -510,6 +526,7 @@ PyObject* getImage(PyObject* self, PyObject* timeoutMS)
     PyObject *view, *info;
     if (!use_mock)
     {
+        Py_BEGIN_ALLOW_THREADS
         lResult = lStream->RetrieveBuffer( &lastBuffer, &lOperationResult, ltimeoutMS );
         if ( !(lResult.IsOK() && lOperationResult.IsOK()) )
         {
@@ -523,8 +540,10 @@ PyObject* getImage(PyObject* self, PyObject* timeoutMS)
             cout << " (buffer does not contain image)";
             return NULL;
         }
+        Py_END_ALLOW_THREADS
         // Get image specific buffer interface.
         PvImage *lImage = lastBuffer->GetImage();
+        
 
         view = PyMemoryView_FromMemory(
                     reinterpret_cast<char *>(lImage->GetDataPointer()),
@@ -535,6 +554,10 @@ PyObject* getImage(PyObject* self, PyObject* timeoutMS)
         // Mock implementation: generate a random image + gaussian beam at a fixed position
         Py_buffer * pythonBuffer = *itPythonMock;
         uint16_t * raw_buffer = reinterpret_cast<uint16_t *>(pythonBuffer->buf);
+        // not 100% sure that this is totally kosher, since we are writing to a python buffer,
+        // but I think that since we change just the contents, and not the size, etc, it's probably fine.
+        // also, this is just for our mock, so it's all good
+        Py_BEGIN_ALLOW_THREADS
         for (uint32_t y=0; y<MOCK_IMG_HEIGHT; y++)
         {
             for (uint32_t x=0; x<MOCK_IMG_WIDTH; x++)
@@ -550,6 +573,7 @@ PyObject* getImage(PyObject* self, PyObject* timeoutMS)
                                            );
             }
         }
+        Py_END_ALLOW_THREADS
 
         // change to the next buffer in the list (wrapping around when needed)
         if (++itPythonMock == pythonBufferList.end())

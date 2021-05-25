@@ -144,6 +144,10 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(PUREGEV_ROOT)\Libraries;C:\WPy64-3940\python-3.9.4.amd64\libs</AdditionalLibraryDirectories>
     </Link>
+    <CustomBuildStep>
+      <Command>
+      </Command>
+    </CustomBuildStep>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="pyebus_main.cpp" />
