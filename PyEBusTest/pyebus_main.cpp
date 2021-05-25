@@ -47,7 +47,7 @@ PyObject* getMockPvImageInfo();
 
 void printPvResultError(PvResult & lResult);
 
-static PyMethodDef pyebustest_methods[] = {
+static PyMethodDef pyebus_methods[] = {
     // The first property is the name exposed to Python, fast_tanh
     // The second is the C++ function with the implementation
     // METH_O means it takes a single PyObject argument
@@ -82,17 +82,17 @@ static PyMethodDef pyebustest_methods[] = {
     { nullptr, nullptr, 0, nullptr }
 };
 
-static PyModuleDef pyebustest_module = {
+static PyModuleDef pyebus_module = {
     PyModuleDef_HEAD_INIT,
-    "pyebustest",                        // Module name to use with Python import statements
-    "Provides some functions, but faster",  // Module description
+    "pyebus",                        // Module name to use with Python import statements
+    "Wrapper for the eBUS C++ SDK from Pleora Technologies",  // Module description
     0,
-    pyebustest_methods                   // Structure that defines the methods of the module
+    pyebus_methods                   // Structure that defines the methods of the module
 };
 
-PyMODINIT_FUNC PyInit_pyebustest() {
-    printf("hello from PyInit_pyebustest()!\n");
-    return PyModule_Create(&pyebustest_module);
+PyMODINIT_FUNC PyInit_pyebus() {
+    printf("hello from PyInit_pyebus()!\n");
+    return PyModule_Create(&pyebus_module);
 }
 
 ///////////////////////////////////////////////

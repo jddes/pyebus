@@ -6,7 +6,7 @@ import numpy as np
 import cv2
 
 with os.add_dll_directory('C:\\Program Files\\Common Files\\Pleora\\eBUS SDK'):
-    import pyebustest as ebus
+    import pyebus as ebus
 
 def expand_img_info_tuple(img_info):
     """ Unpack the img_info tuple into a dictionary.
