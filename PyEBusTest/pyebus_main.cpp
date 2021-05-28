@@ -377,8 +377,8 @@ PyObject* readSerialPort(PyObject* self, PyObject* args)
             Py_END_ALLOW_THREADS
             if ( lResult.GetCode() == PvResult::Code::TIMEOUT )
             {
-                cout << "Serial Read Timeout" << endl;
-                break;
+                //cout << "Serial Read Timeout" << endl;
+                break; // this actually happens frequently in normal operation: this is how we implement polling of the data
             }
 
             // Increments read head
