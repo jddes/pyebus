@@ -21,9 +21,11 @@ using namespace std;
 PyObject* useMock(              PyObject* self);
 PyObject* useRealDevice(        PyObject* self);
 PyObject* getInterfaceCount(    PyObject* self);
+
+PyObject* findDevices(          PyObject* self, PyObject* timeoutMS);
 PyObject* getDeviceCount(       PyObject* self, PyObject* oInterfaceNumber);
 PyObject* getInterfaceDisplayID(PyObject* self, PyObject* oInterfaceNumber);
-PyObject* getDeviceUniqueID(    PyObject* self, PyObject *args);
+PyObject* getDeviceConnectionID(    PyObject* self, PyObject *args);
 PyObject* connectToDevice(      PyObject* self, PyObject *args);
 PyObject* closeDevice(          PyObject* self);
 
@@ -56,9 +58,10 @@ static PyMethodDef pyebus_methods[] = {
     { "useRealDevice",         (PyCFunction)useRealDevice,         METH_NOARGS,  nullptr },
 
     { "getInterfaceCount",     (PyCFunction)getInterfaceCount,     METH_NOARGS,  nullptr },
+    { "findDevices",           (PyCFunction)findDevices,           METH_O,       nullptr },
     { "getDeviceCount",        (PyCFunction)getDeviceCount,        METH_O,       nullptr },
     { "getInterfaceDisplayID", (PyCFunction)getInterfaceDisplayID, METH_O,       nullptr },
-    { "getDeviceUniqueID",     (PyCFunction)getDeviceUniqueID,     METH_VARARGS, nullptr },
+    { "getDeviceConnectionID", (PyCFunction)getDeviceConnectionID, METH_VARARGS, nullptr },
     { "connectToDevice",       (PyCFunction)connectToDevice,       METH_VARARGS, nullptr },
     { "closeDevice",           (PyCFunction)closeDevice,           METH_NOARGS,  nullptr },
 
@@ -112,7 +115,7 @@ PvBuffer *lastBuffer = NULL;
 PvDeviceAdapter *lDeviceAdapter = NULL;
 PvDeviceSerialPort lPort;
 
-#define SPEED ( "Baud9600" )
+#define SPEED ( "Baud57600" )
 #define STOPBITS ( "One" )
 #define PARITY ( "None" )
 #define RX_BUFFER_SIZE ( 2<<20 )
@@ -144,11 +147,20 @@ PyObject* getInterfaceCount(PyObject* self) {
     return PyLong_FromSize_t(pvSystem.GetInterfaceCount());
 }
 
+PyObject* findDevices(PyObject* self, PyObject* timeoutMS) {
+    uint32_t iIimeoutMS = PyLong_AsUnsignedLong(timeoutMS);
+    pvSystem.SetDetectionTimeout(iIimeoutMS);
+    pvSystem.Find();
+    Py_RETURN_NONE;
+}
+
 PyObject* getDeviceCount(PyObject* self, PyObject* oInterfaceNumber) {
     uint32_t interface_number = PyLong_AsLong(oInterfaceNumber);
+    printf("interface_number = %d\n", interface_number);
     const PvInterface *lInterface = dynamic_cast<const PvInterface *>( pvSystem.GetInterface( interface_number ) );
     if (lInterface == NULL)
         return NULL;
+    printf("lInterface->GetDeviceCount() = %d\n", lInterface->GetDeviceCount());
     if (use_mock)
         if (interface_number == pvSystem.GetInterfaceCount()-1)
             return PyLong_FromSize_t(1);
@@ -169,7 +181,7 @@ PyObject* getInterfaceDisplayID(PyObject* self, PyObject* oInterfaceNumber) {
     return PyUnicode_FromStringAndSize(pvs.GetAscii(), pvs.GetLength());
 }
 
-PyObject* getDeviceUniqueID(PyObject* self, PyObject *args) {
+PyObject* getDeviceConnectionID(PyObject* self, PyObject *args) {
     uint32_t interface_number, device_number;
     if (!PyArg_ParseTuple(args, "ii", &interface_number, &device_number))
         return NULL;
@@ -184,7 +196,7 @@ PyObject* getDeviceUniqueID(PyObject* self, PyObject *args) {
         if (lDI == NULL)
             return NULL;
 
-        PvString pvs = lInterface->GetUniqueID();
+        PvString pvs = lDI->GetConnectionID();
         return PyUnicode_FromStringAndSize(pvs.GetAscii(), pvs.GetLength());
     }
 }
@@ -262,7 +274,7 @@ PyObject* openDeviceSerialPort(PyObject* self)
     lParams->SetEnumValue( "BulkParity", PARITY );
 
     // For this test to work without attached serial hardware we enable the port loop back
-    lParams->SetBooleanValue( "BulkLoopback", true );
+    // lParams->SetBooleanValue( "BulkLoopback", true );
 
     // Open serial port
     PvResult lResult;
@@ -311,6 +323,13 @@ PyObject* writeSerialPort(PyObject* self, PyObject* arg)
         Py_BEGIN_ALLOW_THREADS
         lResult = lPort.Write( buf, size, lBytesWritten );
         Py_END_ALLOW_THREADS
+        //printf("Sent %d/%d bytes: ", size, lBytesWritten);
+        //for (uint32_t k = 0; k < size; k++)
+        //{
+        //    
+        //    printf("0x%0x, ", buf[k]);
+        //}
+        //printf("\n");
         if ( !lResult.IsOK() )
         {
             // Unable to send data over serial port!

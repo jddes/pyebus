@@ -37,7 +37,7 @@ def expand_img_info_tuple(img_info):
 
 ebus.useMock()
 
-device_unique_id = ""
+device_connection_id = ""
 print("ebus.getInterfaceCount() = ", ebus.getInterfaceCount())
 ifcount = ebus.getInterfaceCount()
 for if_id in range(ifcount):
@@ -45,12 +45,12 @@ for if_id in range(ifcount):
     print("if_name = ", if_name)
     print("ebus.getDeviceCount() = ", ebus.getDeviceCount(if_id))
     for dev_id in range(ebus.getDeviceCount(if_id)):
-        device_unique_id = ebus.getDeviceUniqueID(if_id, dev_id)
-        print("device_unique_id = ", device_unique_id)
+        device_connection_id = ebus.getDeviceConnectionID(if_id, dev_id)
+        print("device_connection_id = ", device_connection_id)
 
-# device_unique_id = "random_string"
-ebus.connectToDevice(device_unique_id)
-ebus.openStream(device_unique_id)
+# device_connection_id = "random_string"
+ebus.connectToDevice(device_connection_id)
+ebus.openStream(device_connection_id)
 (buffer_size, buffer_count) = ebus.getBufferRequirements()
 # allocate "buffer_count" buffers of size "buffer_size"!
 buffers = []
