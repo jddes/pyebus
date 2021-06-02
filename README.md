@@ -11,3 +11,4 @@ WPy64-3940\python-3.9.4.amd64\lib\site-packages
 * The eBUS SDK from Pleora Technologies, composed of drivers and dlls installed in "C:\\Program Files\\Common Files\\Pleora\\eBUS SDK".    This path is currently hard-coded in __init__.py, which should ideally be changed.  It might be sufficient to install their free "eBUS player" only, which might install all the required drivers and API even without the SDK
 * WinPython64-3.9.4.0  
 * Opencv: `pip install opencv-python`
+* For building the module: Visual Studio 2019.  The free community edition is sufficient.
