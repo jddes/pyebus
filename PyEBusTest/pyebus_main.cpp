@@ -563,7 +563,11 @@ PyObject* getImage(PyObject* self, PyObject* timeoutMS)
         // Get image specific buffer interface.
         PvImage *lImage = lastBuffer->GetImage();
         
-
+        if (lImage == NULL)
+        {
+            cout << "lImage is null" << endl;
+            return NULL;
+        }
         view = PyMemoryView_FromMemory(
                     reinterpret_cast<char *>(lImage->GetDataPointer()),
                     lImage->GetRequiredSize(),
@@ -622,7 +626,7 @@ PyObject* releaseImage(PyObject* self)
 PyObject* getPvImageInfo(PvImage & img)
 {
     PvPixelType pixelType = img.GetPixelType();
-    return Py_BuildValue("(IIIIIIIIHHIIppppppppp)",
+    return Py_BuildValue("(IIIIIIIIHHIIIIIIIIIII)",
                 img.GetWidth(),
                 img.GetHeight(),
                 img.GetBitsPerPixel(),
