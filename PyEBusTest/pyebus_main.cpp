@@ -218,9 +218,7 @@ PyObject* connectToDevice(PyObject* self, PyObject *args)
     char * unique_id;
     if (!PyArg_ParseTuple(args, "s", &unique_id))
         return NULL;
-
     PvString pvs(unique_id);
-    cout << "Connecting to " << pvs.GetAscii() << "." << endl;
 
     PvResult lResult;
     if (!use_mock)
