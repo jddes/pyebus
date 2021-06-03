@@ -28,6 +28,11 @@ PyObject* getInterfaceDisplayID(PyObject* self, PyObject* oInterfaceNumber);
 PyObject* getDeviceConnectionID(    PyObject* self, PyObject *args);
 PyObject* connectToDevice(      PyObject* self, PyObject *args);
 PyObject* closeDevice(          PyObject* self);
+PyObject* setDeviceBooleanValue(PyObject* self, PyObject *args);
+PyObject* setDeviceEnumValue(   PyObject* self, PyObject *args);
+PyObject* setDeviceFloatValue(  PyObject* self, PyObject *args);
+PyObject* setDeviceIntegerValue(PyObject* self, PyObject *args);
+PyObject* setDeviceStringValue( PyObject* self, PyObject *args);
 
 PyObject* openDeviceSerialPort(PyObject* self);
 PyObject* closeDeviceSerialPort(PyObject* self);
@@ -64,6 +69,12 @@ static PyMethodDef pyebus_methods[] = {
     { "getDeviceConnectionID", (PyCFunction)getDeviceConnectionID, METH_VARARGS, nullptr },
     { "connectToDevice",       (PyCFunction)connectToDevice,       METH_VARARGS, nullptr },
     { "closeDevice",           (PyCFunction)closeDevice,           METH_NOARGS,  nullptr },
+
+    { "setDeviceBooleanValue", (PyCFunction)setDeviceBooleanValue, METH_VARARGS,  nullptr },
+    { "setDeviceEnumValue",    (PyCFunction)setDeviceEnumValue,    METH_VARARGS,  nullptr },
+    { "setDeviceFloatValue",   (PyCFunction)setDeviceFloatValue,   METH_VARARGS,  nullptr },
+    { "setDeviceIntegerValue", (PyCFunction)setDeviceIntegerValue, METH_VARARGS,  nullptr },
+    { "setDeviceStringValue",  (PyCFunction)setDeviceStringValue,  METH_VARARGS,  nullptr },
 
     { "openDeviceSerialPort",  (PyCFunction)openDeviceSerialPort,  METH_NOARGS,  nullptr },
     { "closeDeviceSerialPort", (PyCFunction)closeDeviceSerialPort, METH_NOARGS,  nullptr },
@@ -105,6 +116,7 @@ PyMODINIT_FUNC PyInit_pyebus() {
 PvSystem pvSystem;
 PvDevice * lDevice = NULL;
 PvStream *lStream = NULL;
+PvGenParameterArray *lParams = NULL;
 
 typedef std::list<Py_buffer *> pythonBufferListType;
 typedef std::list<PvBuffer *> ebusBufferListType;
@@ -214,6 +226,7 @@ PyObject* connectToDevice(PyObject* self, PyObject *args)
     if (!use_mock)
     {
         lDevice = PvDevice::CreateAndConnect( pvs, &lResult );
+        lParams = lDevice->GetParameters();
     } else {
         if (pvs == MOCK_DEVICE_GUID)
             lResult.SetCode(0);
@@ -255,6 +268,68 @@ void printPvResultError(PvResult & lResult)
     cout << "-----------------------------------------------" << endl;
 }
 
+
+    // lParams->SetEnumValue( "Height", "512" );
+    // lParams->SetEnumValue( "PixelFormat", "Mono12" );
+    // lParams->SetEnumValue( "TestPattern", "Off" );
+    // lParams->SetEnumValue( "PixelBusDataValidEnabled", "1" );
+
+
+PyObject* setDeviceBooleanValue(PyObject* self, PyObject *args)
+{
+    char * setting;
+    int value;
+    if (!PyArg_ParseTuple(args, "sp", &setting, &value))
+        return NULL;
+
+    lParams->SetBooleanValue( setting, (bool) value );
+    Py_RETURN_NONE;
+}
+
+PyObject* setDeviceEnumValue(PyObject* self, PyObject *args)
+{
+    char * setting;
+    char * value;
+    if (!PyArg_ParseTuple(args, "ss", &setting, &value))
+        return NULL;
+
+    lParams->SetEnumValue( setting, value );
+    Py_RETURN_NONE;
+}
+
+PyObject* setDeviceFloatValue(PyObject* self, PyObject *args)
+{
+    char * setting;
+    double value;
+    if (!PyArg_ParseTuple(args, "sd", &setting, &value))
+        return NULL;
+
+    lParams->SetFloatValue( setting, value );
+    Py_RETURN_NONE;
+}
+
+PyObject* setDeviceIntegerValue(PyObject* self, PyObject *args)
+{
+    char * setting;
+    int64_t value;
+    if (!PyArg_ParseTuple(args, "sl", &setting, &value))
+        return NULL;
+
+    lParams->SetIntegerValue( setting, value );
+    Py_RETURN_NONE;
+}
+
+PyObject* setDeviceStringValue(PyObject* self, PyObject *args)
+{
+    char * setting;
+    char * value;
+    if (!PyArg_ParseTuple(args, "ss", &setting, &value))
+        return NULL;
+
+    lParams->SetEnumValue( setting, value );
+    Py_RETURN_NONE;
+}
+
 // this follows "Pleora Technologies Inc\eBUS SDK\Samples\DeviceSerialPort\DeviceSerialPort.cpp"
 PyObject* openDeviceSerialPort(PyObject* self)
 {
@@ -265,7 +340,6 @@ PyObject* openDeviceSerialPort(PyObject* self)
     }
 
     lDeviceAdapter = new PvDeviceAdapter( lDevice );
-    PvGenParameterArray *lParams = lDevice->GetParameters();
 
     lParams->SetEnumValue( "BulkSelector", "Bulk0" );
     lParams->SetEnumValue( "BulkMode", "UART" );
